@@ -7,6 +7,9 @@ from scapy.utils import wrpcap
 
 counter_ = 1
 
+def generate_home_ip():
+    return f"{192}.{168}.{1}.{random.randint(1, 255)}"
+
 def generate_random_ip():
     return ".".join(map(str, (random.randint(1, 254) for _ in range(4))))
 
@@ -105,6 +108,8 @@ def parse_snort_conf(filename):
     return ip_vars, port_vars, other_vars
 
 def choose_random_var(var_list):
+    if isinstance(var_list, str) and var_list.startswith("["):
+        var_list = var_list[1:-1].split(',')
     if isinstance(var_list, list):
         if var_list:
             return random.choice(var_list)
@@ -113,8 +118,7 @@ def choose_random_var(var_list):
     elif isinstance(var_list, int):
         return var_list
     else:
-        print(f"Unexpected variable type: {type(var_list)}")
-        return random.randint(1024, 65535)
+        return var_list
 
 def choose_random_ipvar(var_list):
     if isinstance(var_list, list):
@@ -125,16 +129,17 @@ def choose_random_ipvar(var_list):
     elif isinstance(var_list, int):
         return var_list
     else:
-        print(f"Unexpected variable type: {type(var_list)}")
-        return generate_random_ip()
+        return var_list
 
 def parse_snort_rule(snort_rule, ip_vars, port_vars):
     rule_parts = parse_rule_head(snort_rule)
     action_field, prtcl, src_address, src_port, dst_address, dst_port = rule_parts
-    print("before port random", {dst_address})
     str_for_rplc = "any"
     if str(src_port).startswith("$") and src_port != 'any':
         src_port_value = port_vars.get(str(src_port).lstrip('$'), None)
+        src_port = src_port_value
+        if str(src_port).startswith("$") and src_port != 'any':
+            src_port_value = port_vars.get(str(src_port).lstrip('$'), None)
         if src_port_value:
             src_port = choose_random_var(src_port_value)
         else:
@@ -142,6 +147,9 @@ def parse_snort_rule(snort_rule, ip_vars, port_vars):
             src_port = str_for_rplc
     if str(dst_port).startswith("$") and dst_port != 'any':
         dst_port_value = port_vars.get(str(dst_port).lstrip('$'), None)
+        dst_port = dst_port_value
+        if str(dst_port).startswith("$") and dst_port != 'any':
+            dst_port_value = port_vars.get(str(src_port).lstrip('$'), None)
         if dst_port_value:
             dst_port = choose_random_var(dst_port_value)
         else:
@@ -151,6 +159,9 @@ def parse_snort_rule(snort_rule, ip_vars, port_vars):
     if isinstance(ip_vars, dict):
         if str(src_address).startswith("$") and src_address != 'any':
             src_addr_value = ip_vars.get(str(src_address).lstrip('$'), None)
+            src_address = src_addr_value
+            if str(src_address).startswith("$") and src_address != 'any':
+                src_addr_value = ip_vars.get(str(src_address).lstrip('$'), None)
             if src_addr_value:
                 src_address = choose_random_ipvar(src_addr_value)
             else:
@@ -159,6 +170,9 @@ def parse_snort_rule(snort_rule, ip_vars, port_vars):
 
         if str(dst_address).startswith("$") and dst_address != 'any':
             dst_addr_value = ip_vars.get(str(dst_address).lstrip('$'), None)
+            dst_address = dst_addr_value
+            if str(dst_address).startswith("$") and dst_address != 'any':
+                dst_addr_value = ip_vars.get(str(dst_address).lstrip('$'), None)
             if dst_addr_value:
                 dst_address = choose_random_ipvar(dst_addr_value)
             else:
@@ -186,9 +200,9 @@ def parse_snort_rule(snort_rule, ip_vars, port_vars):
         if var_name.startswith('$'):
             src_address_value = port_vars.get(var_name.lstrip('$'), None)
             if src_address_value:
-                src_address = choose_random_var(src_address_value)
+                src_address = choose_random_ipvar(src_address_value)
             else:
-                print(f"Variable {var_name} not found in portvar definitions.")
+                print(f"Variable {var_name} not found in ipvar definitions.")
         else:
             print(f"Invalid variable format: {src_address}")
     if src_port == 'any':
@@ -221,9 +235,9 @@ def parse_snort_rule(snort_rule, ip_vars, port_vars):
         if var_name.startswith('$'):
             dst_address_value = port_vars.get(var_name.lstrip('$'), None)
             if dst_address_value:
-                dst_address = choose_random_var(dst_address_value)
+                dst_address = choose_random_ipvar(dst_address_value)
             else:
-                print(f"Variable {var_name} not found in portvar definitions.")
+                print(f"Variable {var_name} not found in ipvar definitions.")
         else:
             print(f"Invalid variable format: {dst_address}")
 
@@ -239,7 +253,11 @@ def parse_snort_rule(snort_rule, ip_vars, port_vars):
                 print(f"Variable {var_name} not found in portvar definitions.")
         else:
             print(f"Invalid variable format: {dst_address}")
-            
+    if '/' in str(src_address):
+        src_address = generate_home_ip()
+    if '/' in str(dst_address):
+        dst_address = generate_home_ip()
+    
     def parse_port(port):
         if isinstance(port, str) and port.startswith("!$"):
             exclude_var = port[2:]
@@ -382,7 +400,7 @@ def create_pld(segs):
 
 def send_cntnt(src_ip, src_port, dst_ip, dst_port, cntnt):
     global counter_
-
+    
     ip_ = IP(src=src_ip, dst=dst_ip)
     tcp_ = TCP(sport=int(src_port), dport=int(dst_port))
     if cntnt:
@@ -392,12 +410,12 @@ def send_cntnt(src_ip, src_port, dst_ip, dst_port, cntnt):
         pld = b""
 
     packet = ip_ / tcp_ / Raw(load=pld)
-    wrpcap(f"pcaps/file{str(counter_)}.pcap", packet)
+    wrpcap(f"pcaps1/file{str(counter_)}.pcap", packet)
     counter_ += 1
 
 def main():
     filename = "snort.conf"
-    with open("simple.rules.txt", "r") as file:
+    with open("simple.rules1.txt", "r") as file:
         ip_vars, port_vars, other_vars = parse_snort_conf(filename)
         for snort_rule in file:
             snort_rule = snort_rule.strip()
@@ -405,7 +423,7 @@ def main():
                 continue
             print(snort_rule)
             parsed_data = parse_snort_rule(snort_rule, ip_vars, port_vars)
-
+            
             print(f"Action_Field: {parsed_data['action_field']}")
             print(f"Protocol: {parsed_data['protocol']}")
             print(f"Source_address: {parsed_data['src_address']}")
@@ -460,7 +478,7 @@ def main():
                        parsed_data['dst_address'], parsed_data['dst_port'],
                        contend_result)
             print("*" * 50)
-            time.sleep(0.1)
+            #time.sleep(4)
 
 if __name__ == "__main__":
     main()
